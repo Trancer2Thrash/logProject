@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EDR日志调查工具</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/theme-chalk/dark/css-vars.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f0f2f5;
+        }
+        #app {
+            min-height: 100vh;
+        }
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .app-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .app-header h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        .app-main {
+            flex: 1;
+            display: flex;
+            padding: 20px;
+            gap: 20px;
+        }
+        .sidebar {
+            width: 300px;
+            flex-shrink: 0;
+        }
+        .main-content {
+            flex: 1;
+            min-width: 0;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #eee;
+        }
+        .client-item {
+            padding: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 8px;
+            border: 1px solid #eee;
+        }
+        .client-item:hover {
+            background: #f5f7fa;
+        }
+        .client-item.active {
+            background: #ecf5ff;
+            border-color: #409eff;
+        }
+        .client-item .hostname {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .client-item .meta {
+            font-size: 12px;
+            color: #909399;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+        .status-dot.online {
+            background: #67c23a;
+        }
+        .status-dot.offline {
+            background: #909399;
+        }
+        .command-input {
+            margin-bottom: 16px;
+        }
+        .output-box {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 16px;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            max-height: 400px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .output-box .error {
+            color: #f56c6c;
+        }
+        .output-box .success {
+            color: #67c23a;
+        }
+        .file-tree {
+            max-height: 500px;
+            overflow: auto;
+        }
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .file-item:hover {
+            background: #f5f7fa;
+        }
+        .file-item .icon {
+            margin-right: 8px;
+            color: #909399;
+        }
+        .file-item .icon.folder {
+            color: #e6a23c;
+        }
+        .file-item .icon.file {
+            color: #409eff;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        .info-item {
+            padding: 16px;
+            background: #f5f7fa;
+            border-radius: 6px;
+        }
+        .info-item .label {
+            font-size: 12px;
+            color: #909399;
+            margin-bottom: 4px;
+        }
+        .info-item .value {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .token-display {
+            background: #f5f7fa;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: monospace;
+            word-break: break-all;
+            margin: 12px 0;
+        }
+        .no-client {
+            text-align: center;
+            padding: 40px;
+            color: #909399;
+        }
+        .no-client .icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="app-container">
+            <!-- Header -->
+            <header class="app-header">
+                <h1>🔍 EDR日志调查工具</h1>
+                <div>
+                    <el-button type="primary" plain size="small" @click="showTokenDialog = true">
+                        获取Token
+                    </el-button>
+                </div>
+            </header>
+
+            <!-- Main Content -->
+            <main class="app-main">
+                <!-- Sidebar - Client List -->
+                <aside class="sidebar">
+                    <div class="card">
+                        <div class="card-title">
+                            在线客户端 ({{ clients.length }})
+                            <el-button type="primary" link size="small" @click="refreshClients">
+                                刷新
+                            </el-button>
+                        </div>
+                        <div v-if="clients.length === 0" class="no-client">
+                            <div class="icon">💻</div>
+                            <div>暂无在线客户端</div>
+                            <div style="font-size: 12px; margin-top: 8px;">请先启动客户端程序</div>
+                        </div>
+                        <div v-else>
+                            <div v-for="client in clients" :key="client.client_id"
+                                 class="client-item"
+                                 :class="{ active: selectedClient?.client_id === client.client_id }"
+                                 @click="selectClient(client)">
+                                <div class="hostname">
+                                    <span class="status-dot online"></span>
+                                    {{ client.hostname || client.client_id }}
+                                </div>
+                                <div class="meta">
+                                    {{ client.ip_address }} · {{ client.username || 'N/A' }}
+                                </div>
+                                <div class="meta">
+                                    {{ formatTime(client.connect_time) }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Main Panel -->
+                <section class="main-content" v-if="selectedClient">
+                    <!-- Tabs -->
+                    <el-tabs v-model="activeTab" type="border-card">
+                        <!-- Command Execution -->
+                        <el-tab-pane label="命令执行" name="command">
+                            <div class="command-input">
+                                <el-input v-model="command" placeholder="输入命令 (如: whoami, ipconfig, netstat -an)"
+                                          @keyup.enter="executeCommand" clearable>
+                                    <template #append>
+                                        <el-button type="primary" @click="executeCommand" :loading="commandLoading">
+                                            执行
+                                        </el-button>
+                                    </template>
+                                </el-input>
+                            </div>
+                            <div class="card-title">输出结果</div>
+                            <div class="output-box" v-html="commandOutput || '等待执行命令...'"></div>
+                        </el-tab-pane>
+
+                        <!-- File Explorer -->
+                        <el-tab-pane label="文件浏览" name="files">
+                            <div class="command-input">
+                                <el-input v-model="filePath" placeholder="输入路径 (如: C:\Windows)" clearable>
+                                    <template #prepend>路径</template>
+                                    <template #append>
+                                        <el-button @click="listDirectory" :loading="fileLoading">浏览</el-button>
+                                    </template>
+                                </el-input>
+                            </div>
+                            <div class="file-tree">
+                                <div v-for="item in fileList" :key="item.path" class="file-item">
+                                    <span class="icon" :class="item.is_dir ? 'folder' : 'file'">
+                                        {{ item.is_dir ? '📁' : '📄' }}
+                                    </span>
+                                    <span>{{ item.name }}</span>
+                                    <span style="margin-left: auto; font-size: 12px; color: #909399;">
+                                        {{ item.is_dir ? '' : formatSize(item.size) }}
+                                    </span>
+                                    <el-button v-if="!item.is_dir" type="primary" link size="small"
+                                               @click="readFile(item.path)" style="margin-left: 8px;">
+                                        查看
+                                    </el-button>
+                                    <el-button v-if="!item.is_dir" type="success" link size="small"
+                                               @click="downloadFile(item.path)" style="margin-left: 8px;">
+                                        下载
+                                    </el-button>
+                                </div>
+                            </div>
+                        </el-tab-pane>
+
+                        <!-- System Info -->
+                        <el-tab-pane label="系统信息" name="system">
+                            <el-button type="primary" @click="getSystemInfo" :loading="systemLoading">
+                                刷新系统信息
+                            </el-button>
+                            <div v-if="systemInfo" style="margin-top: 16px;">
+                                <div class="card-title">基础信息</div>
+                                <div class="info-grid">
+                                    <div class="info-item">
+                                        <div class="label">主机名</div>
+                                        <div class="value">{{ systemInfo.basic?.hostname }}</div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="label">操作系统</div>
+                                        <div class="value">{{ systemInfo.basic?.os_type }} {{ systemInfo.basic?.os_release }}</div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="label">架构</div>
+                                        <div class="value">{{ systemInfo.basic?.architecture }}</div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="label">CPU核心</div>
+                                        <div class="value">{{ systemInfo.basic?.cpu_count }}</div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="label">运行时间</div>
+                                        <div class="value">{{ systemInfo.basic?.uptime }}</div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="label">当前用户</div>
+                                        <div class="value">{{ systemInfo.basic?.current_user }}</div>
+                                    </div>
+                                </div>
+
+                                <div class="card-title" style="margin-top: 20px;">CPU使用</div>
+                                <el-progress :percentage="systemInfo.cpu?.cpu_usage || 0" :stroke-width="20" />
+
+                                <div class="card-title" style="margin-top: 20px;">内存使用</div>
+                                <el-progress :percentage="systemInfo.memory?.memory_percent || 0" :stroke-width="20" />
+                                <div style="font-size: 12px; color: #909399; margin-top: 4px;">
+                                    {{ formatSize(systemInfo.memory?.memory_used) }} / {{ formatSize(systemInfo.memory?.memory_total) }}
+                                </div>
+                            </div>
+                        </el-tab-pane>
+
+                        <!-- Network Info -->
+                        <el-tab-pane label="网络信息" name="network">
+                            <el-button type="primary" @click="getNetworkInfo" :loading="networkLoading">
+                                刷新网络信息
+                            </el-button>
+                            <div v-if="networkInfo" style="margin-top: 16px;">
+                                <div class="card-title">网络接口</div>
+                                <el-table :data="networkInfo.interfaces" stripe size="small">
+                                    <el-table-column prop="name" label="名称" />
+                                    <el-table-column label="IP地址">
+                                        <template #default="scope">
+                                            {{ scope.row.addresses?.[0]?.address }}
+                                        </template>
+                                    </el-table-column>
+                                </el-table>
+
+                                <div class="card-title" style="margin-top: 20px;">网络连接 (前50条)</div>
+                                <el-table :data="networkInfo.connections?.slice(0, 50)" stripe size="small" max-height="300">
+                                    <el-table-column prop="local_addr" label="本地地址" width="180" />
+                                    <el-table-column prop="remote_addr" label="远程地址" width="180" />
+                                    <el-table-column prop="status" label="状态" width="120" />
+                                    <el-table-column prop="pid" label="PID" width="80" />
+                                </el-table>
+                            </div>
+                        </el-tab-pane>
+
+                        <!-- Process List -->
+                        <el-tab-pane label="进程列表" name="processes">
+                            <el-button type="primary" @click="getProcessList" :loading="processLoading">
+                                刷新进程列表
+                            </el-button>
+                            <div v-if="processList" style="margin-top: 16px;">
+                                <el-table :data="processList" stripe size="small" max-height="500">
+                                    <el-table-column prop="pid" label="PID" width="80" sortable />
+                                    <el-table-column prop="name" label="名称" width="150" />
+                                    <el-table-column prop="username" label="用户" width="120" />
+                                    <el-table-column prop="cpu_percent" label="CPU%" width="80" sortable />
+                                    <el-table-column prop="memory_percent" label="内存%" width="80" sortable />
+                                    <el-table-column prop="cmdline" label="命令行" show-overflow-tooltip />
+                                </el-table>
+                            </div>
+                        </el-tab-pane>
+
+                        <!-- EDR Collect -->
+                        <el-tab-pane label="EDR收集" name="edr">
+                            <el-button type="primary" @click="collectEDR" :loading="edrLoading" size="large">
+                                🚀 一键收集所有EDR信息
+                            </el-button>
+                            <div v-if="edrData" style="margin-top: 16px;">
+                                <el-alert :title="`收集完成，耗时 ${edrData.elapsed_seconds} 秒`" type="success" show-icon />
+
+                                <el-collapse style="margin-top: 16px;">
+                                    <el-collapse-item title="系统基础信息" name="basic">
+                                        <pre>{{ JSON.stringify(edrData.data?.basic, null, 2) }}</pre>
+                                    </el-collapse-item>
+                                    <el-collapse-item title="CPU信息" name="cpu">
+                                        <pre>{{ JSON.stringify(edrData.data?.cpu, null, 2) }}</pre>
+                                    </el-collapse-item>
+                                    <el-collapse-item title="内存信息" name="memory">
+                                        <pre>{{ JSON.stringify(edrData.data?.memory, null, 2) }}</pre>
+                                    </el-collapse-item>
+                                    <el-collapse-item title="磁盘信息" name="disk">
+                                        <pre>{{ JSON.stringify(edrData.data?.disk, null, 2) }}</pre>
+                                    </el-collapse-item>
+                                    <el-collapse-item :title="`网络连接 (${edrData.data?.network?.connections?.length || 0})`" name="network">
+                                        <pre>{{ JSON.stringify(edrData.data?.network, null, 2) }}</pre>
+                                    </el-collapse-item>
+                                    <el-collapse-item :title="`进程列表 (${edrData.data?.processes?.length || 0})`" name="processes">
+                                        <pre>{{ JSON.stringify(edrData.data?.processes?.slice(0, 20), null, 2) }}</pre>
+                                    </el-collapse-item>
+                                    <el-collapse-item :title="`服务列表 (${edrData.data?.services?.length || 0})`" name="services">
+                                        <pre>{{ JSON.stringify(edrData.data?.services?.slice(0, 50), null, 2) }}</pre>
+                                    </el-collapse-item>
+                                    <el-collapse-item :title="`计划任务 (${edrData.data?.scheduled_tasks?.length || 0})`" name="tasks">
+                                        <pre>{{ JSON.stringify(edrData.data?.scheduled_tasks?.slice(0, 50), null, 2) }}</pre>
+                                    </el-collapse-item>
+                                    <el-collapse-item :title="`已安装软件 (${edrData.data?.installed_software?.length || 0})`" name="software">
+                                        <pre>{{ JSON.stringify(edrData.data?.installed_software?.slice(0, 50), null, 2) }}</pre>
+                                    </el-collapse-item>
+                                    <el-collapse-item title="防火墙状态" name="firewall">
+                                        <pre>{{ JSON.stringify(edrData.data?.firewall, null, 2) }}</pre>
+                                    </el-collapse-item>
+                                    <el-collapse-item :title="`用户列表 (${edrData.data?.users?.length || 0})`" name="users">
+                                        <pre>{{ JSON.stringify(edrData.data?.users, null, 2) }}</pre>
+                                    </el-collapse-item>
+                                    <el-collapse-item :title="`启动项 (${edrData.data?.startup_programs?.length || 0})`" name="startup">
+                                        <pre>{{ JSON.stringify(edrData.data?.startup_programs, null, 2) }}</pre>
+                                    </el-collapse-item>
+                                </el-collapse>
+
+                                <el-button type="success" style="margin-top: 16px;" @click="exportEDRData">
+                                    📥 导出JSON
+                                </el-button>
+                            </div>
+                        </el-tab-pane>
+
+                        <!-- Log Search -->
+                        <el-tab-pane label="日志搜索" name="logs">
+                            <div class="command-input">
+                                <el-input v-model="logKeyword" placeholder="输入搜索关键字">
+                                    <template #prepend>关键字</template>
+                                </el-input>
+                            </div>
+                            <div class="command-input">
+                                <el-input v-model="logPath" placeholder="日志路径 (可选，默认搜索系统日志目录)">
+                                    <template #prepend>路径</template>
+                                </el-input>
+                            </div>
+                            <el-button type="primary" @click="searchLogs" :loading="logLoading">
+                                搜索日志
+                            </el-button>
+                            <div v-if="logResults" style="margin-top: 16px;">
+                                <el-alert :title="`找到 ${logResults.count} 条结果`" type="info" show-icon />
+                                <div class="output-box" style="margin-top: 16px; max-height: 500px;">
+                                    <div v-for="(result, index) in logResults.results" :key="index" style="margin-bottom: 8px;">
+                                        <div style="color: #67c23a;">{{ result.file }}:{{ result.line_number }}</div>
+                                        <div>{{ result.line }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </el-tab-pane>
+                    </el-tabs>
+                </section>
+
+                <!-- No Client Selected -->
+                <section class="main-content" v-else>
+                    <div class="card">
+                        <div class="no-client">
+                            <div class="icon">👈</div>
+                            <div>请从左侧选择一个客户端</div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <!-- Token Dialog -->
+        <el-dialog v-model="showTokenDialog" title="获取认证Token" width="500px">
+            <p>使用以下Token启动客户端:</p>
+            <div class="token-display" v-if="token">
+                {{ token }}
+            </div>
+            <el-button type="primary" @click="generateToken" :loading="tokenLoading">
+                生成新Token
+            </el-button>
+            <template #footer>
+                <el-button @click="showTokenDialog = false">关闭</el-button>
+            </template>
+        </el-dialog>
+    </div>
+
+    <script>
+    const { createApp, ref, onMounted } = Vue;
+    const { ElMessage } = ElementPlus;
+
+    const API_BASE = '/api';
+
+    createApp({
+        setup() {
+            // Client management
+            const clients = ref([]);
+            const selectedClient = ref(null);
+            const activeTab = ref('command');
+
+            // Token
+            const token = ref('');
+            const showTokenDialog = ref(false);
+            const tokenLoading = ref(false);
+
+            // Command execution
+            const command = ref('');
+            const commandOutput = ref('');
+            const commandLoading = ref(false);
+
+            // File explorer
+            const filePath = ref('C:\\');
+            const fileList = ref([]);
+            const fileLoading = ref(false);
+
+            // System info
+            const systemInfo = ref(null);
+            const systemLoading = ref(false);
+
+            // Network info
+            const networkInfo = ref(null);
+            const networkLoading = ref(false);
+
+            // Process list
+            const processList = ref(null);
+            const processLoading = ref(false);
+
+            // EDR collection
+            const edrData = ref(null);
+            const edrLoading = ref(false);
+
+            // Log search
+            const logKeyword = ref('');
+            const logPath = ref('');
+            const logResults = ref(null);
+            const logLoading = ref(false);
+
+            // API helper
+            const api = {
+                async get(url) {
+                    const res = await axios.get(API_BASE + url);
+                    return res.data;
+                },
+                async post(url, data) {
+                    const res = await axios.post(API_BASE + url, data);
+                    return res.data;
+                }
+            };
+
+            // Methods
+            const refreshClients = async () => {
+                try {
+                    const res = await api.get('/clients');
+                    clients.value = res.clients || [];
+                } catch (e) {
+                    ElMessage.error('获取客户端列表失败');
+                }
+            };
+
+            const selectClient = (client) => {
+                selectedClient.value = client;
+                activeTab.value = 'command';
+                commandOutput.value = '';
+                fileList.value = [];
+                systemInfo.value = null;
+                networkInfo.value = null;
+                processList.value = null;
+                edrData.value = null;
+                logResults.value = null;
+            };
+
+            const generateToken = async () => {
+                tokenLoading.value = true;
+                try {
+                    const res = await api.get('/token');
+                    token.value = res.token;
+                    ElMessage.success('Token已生成');
+                } catch (e) {
+                    ElMessage.error('生成Token失败');
+                }
+                tokenLoading.value = false;
+            };
+
+            const executeCommand = async () => {
+                if (!command.value) return;
+                commandLoading.value = true;
+                commandOutput.value = '执行中...';
+                try {
+                    const res = await api.post(`/clients/${selectedClient.value.client_id}/execute`, {
+                        command: 'cmd',
+                        args: ['/c', command.value],
+                        timeout: 60
+                    });
+                    if (res.success) {
+                        commandOutput.value = res.output || '(无输出)';
+                    } else {
+                        commandOutput.value = `<span class="error">${res.error || '执行失败'}</span>`;
+                    }
+                } catch (e) {
+                    commandOutput.value = `<span class="error">请求失败: ${e.message}</span>`;
+                }
+                commandLoading.value = false;
+            };
+
+            const listDirectory = async () => {
+                fileLoading.value = true;
+                try {
+                    const res = await api.get(`/clients/${selectedClient.value.client_id}/files?path=${encodeURIComponent(filePath.value)}`);
+                    if (res.success) {
+                        fileList.value = res.items || [];
+                        filePath.value = res.path;
+                    } else {
+                        ElMessage.error(res.error || '获取目录失败');
+                    }
+                } catch (e) {
+                    ElMessage.error('请求失败');
+                }
+                fileLoading.value = false;
+            };
+
+            const readFile = async (path) => {
+                try {
+                    const res = await api.get(`/clients/${selectedClient.value.client_id}/files/read?path=${encodeURIComponent(path)}`);
+                    if (res.success) {
+                        ElMessage.success('文件内容已获取');
+                        commandOutput.value = res.content;
+                        activeTab.value = 'command';
+                    } else {
+                        ElMessage.error(res.error || '读取失败');
+                    }
+                } catch (e) {
+                    ElMessage.error('请求失败');
+                }
+            };
+
+            const downloadFile = async (path) => {
+                window.open(`/api/clients/${selectedClient.value.client_id}/files/download?path=${encodeURIComponent(path)}`);
+            };
+
+            const getSystemInfo = async () => {
+                systemLoading.value = true;
+                try {
+                    const res = await api.get(`/clients/${selectedClient.value.client_id}/system`);
+                    systemInfo.value = res.data;
+                } catch (e) {
+                    ElMessage.error('获取系统信息失败');
+                }
+                systemLoading.value = false;
+            };
+
+            const getNetworkInfo = async () => {
+                networkLoading.value = true;
+                try {
+                    const res = await api.get(`/clients/${selectedClient.value.client_id}/network`);
+                    networkInfo.value = res.data;
+                } catch (e) {
+                    ElMessage.error('获取网络信息失败');
+                }
+                networkLoading.value = false;
+            };
+
+            const getProcessList = async () => {
+                processLoading.value = true;
+                try {
+                    const res = await api.get(`/clients/${selectedClient.value.client_id}/processes`);
+                    processList.value = res.data;
+                } catch (e) {
+                    ElMessage.error('获取进程列表失败');
+                }
+                processLoading.value = false;
+            };
+
+            const collectEDR = async () => {
+                edrLoading.value = true;
+                try {
+                    const res = await api.get(`/clients/${selectedClient.value.client_id}/edr/collect`);
+                    edrData.value = res;
+                    ElMessage.success('EDR信息收集完成');
+                } catch (e) {
+                    ElMessage.error('EDR收集失败');
+                }
+                edrLoading.value = false;
+            };
+
+            const searchLogs = async () => {
+                if (!logKeyword.value) {
+                    ElMessage.warning('请输入搜索关键字');
+                    return;
+                }
+                logLoading.value = true;
+                try {
+                    let url = `/clients/${selectedClient.value.client_id}/logs/search?keyword=${encodeURIComponent(logKeyword.value)}`;
+                    if (logPath.value) {
+                        url += `&path=${encodeURIComponent(logPath.value)}`;
+                    }
+                    const res = await api.get(url);
+                    logResults.value = res;
+                } catch (e) {
+                    ElMessage.error('日志搜索失败');
+                }
+                logLoading.value = false;
+            };
+
+            const exportEDRData = () => {
+                const blob = new Blob([JSON.stringify(edrData.value, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `edr_report_${selectedClient.value.hostname}_${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+
+            const formatSize = (bytes) => {
+                if (!bytes) return '0 B';
+                const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+                let i = 0;
+                while (bytes >= 1024 && i < units.length - 1) {
+                    bytes /= 1024;
+                    i++;
+                }
+                return bytes.toFixed(2) + ' ' + units[i];
+            };
+
+            const formatTime = (time) => {
+                if (!time) return '';
+                return new Date(time).toLocaleString('zh-CN');
+            };
+
+            // Initialize
+            onMounted(() => {
+                refreshClients();
+                // Auto refresh every 10 seconds
+                setInterval(refreshClients, 10000);
+            });
+
+            return {
+                clients,
+                selectedClient,
+                activeTab,
+                token,
+                showTokenDialog,
+                tokenLoading,
+                command,
+                commandOutput,
+                commandLoading,
+                filePath,
+                fileList,
+                fileLoading,
+                systemInfo,
+                systemLoading,
+                networkInfo,
+                networkLoading,
+                processList,
+                processLoading,
+                edrData,
+                edrLoading,
+                logKeyword,
+                logPath,
+                logResults,
+                logLoading,
+                refreshClients,
+                selectClient,
+                generateToken,
+                executeCommand,
+                listDirectory,
+                readFile,
+                downloadFile,
+                getSystemInfo,
+                getNetworkInfo,
+                getProcessList,
+                collectEDR,
+                searchLogs,
+                exportEDRData,
+                formatSize,
+                formatTime
+            };
+        }
+    }).use(ElementPlus).mount('#app');
+    </script>
+</body>
+</html>
