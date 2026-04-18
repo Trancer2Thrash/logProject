@@ -3,7 +3,13 @@
 一个基于 Python + FastAPI + Vue 的远程日志调查与系统信息收集工具，专为 EDR (端点检测与响应) 场景设计。
 
 > 使用 AI 编程工具 (Claude Code) 开发
-
+## AI使用
+**Write|Review|Test：Claude Code+GLM 5.1**  
+**Git Push:Opencode+Oh-My-Openagent+GLM5.1**  
+本次项目完全使用**黑暗工厂**模式：
+- No Human Write Code
+- No Human Test Code
+- No Human Review Code
 ## 功能特性
 
 ### 核心功能
