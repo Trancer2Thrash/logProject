@@ -51,6 +51,26 @@ async def get_client_info(client_id: str):
     return m.client_info[client_id]
 
 
+@router.delete("/clients/{client_id}")
+async def disconnect_client(client_id: str):
+    """断开指定客户端连接"""
+    m = get_manager()
+    if client_id not in m.active_connections:
+        raise HTTPException(status_code=404, detail="Client not connected")
+
+    try:
+        # 发送断开连接消息给客户端
+        await m.send_message(client_id, {
+            "type": "disconnect",
+            "data": {"reason": "Server disconnect"}
+        })
+        # 关闭连接
+        m.disconnect(client_id)
+        return {"success": True, "message": f"Client {client_id} disconnected"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/clients/{client_id}/execute")
 async def execute_command(client_id: str, request: CommandRequest):
     """在客户端执行命令"""

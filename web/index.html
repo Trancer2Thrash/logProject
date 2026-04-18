@@ -220,18 +220,23 @@
                         <div v-else>
                             <div v-for="client in clients" :key="client.client_id"
                                  class="client-item"
-                                 :class="{ active: selectedClient?.client_id === client.client_id }"
-                                 @click="selectClient(client)">
-                                <div class="hostname">
-                                    <span class="status-dot online"></span>
-                                    {{ client.hostname || client.client_id }}
+                                 :class="{ active: selectedClient?.client_id === client.client_id }">
+                                <div @click="selectClient(client)" style="flex: 1; cursor: pointer;">
+                                    <div class="hostname">
+                                        <span class="status-dot online"></span>
+                                        {{ client.hostname || client.client_id }}
+                                    </div>
+                                    <div class="meta">
+                                        {{ client.ip_address }} · {{ client.username || 'N/A' }}
+                                    </div>
+                                    <div class="meta">
+                                        {{ formatTime(client.connect_time) }}
+                                    </div>
                                 </div>
-                                <div class="meta">
-                                    {{ client.ip_address }} · {{ client.username || 'N/A' }}
-                                </div>
-                                <div class="meta">
-                                    {{ formatTime(client.connect_time) }}
-                                </div>
+                                <el-button type="danger" size="small" @click.stop="disconnectClient(client.client_id)"
+                                           style="margin-left: 8px;" title="断开连接">
+                                    断开
+                                </el-button>
                             </div>
                         </div>
                     </div>
@@ -486,7 +491,7 @@
 
     <script>
     const { createApp, ref, onMounted } = Vue;
-    const { ElMessage } = ElementPlus;
+    const { ElMessage, ElMessageBox } = ElementPlus;
 
     const API_BASE = '/api';
 
@@ -543,6 +548,10 @@
                 async post(url, data) {
                     const res = await axios.post(API_BASE + url, data);
                     return res.data;
+                },
+                async delete(url) {
+                    const res = await axios.delete(API_BASE + url);
+                    return res.data;
                 }
             };
 
@@ -566,6 +575,29 @@
                 processList.value = null;
                 edrData.value = null;
                 logResults.value = null;
+            };
+
+            const disconnectClient = async (clientId) => {
+                try {
+                    await ElMessageBox.confirm(
+                        `确定要断开客户端 "${clientId}" 的连接吗？`,
+                        '断开连接',
+                        { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
+                    );
+
+                    const res = await api.delete(`/clients/${clientId}`);
+                    if (res.success) {
+                        ElMessage.success('客户端已断开');
+                        if (selectedClient.value?.client_id === clientId) {
+                            selectedClient.value = null;
+                        }
+                        await refreshClients();
+                    }
+                } catch (e) {
+                    if (e !== 'cancel') {
+                        ElMessage.error('断开连接失败');
+                    }
+                }
             };
 
             const generateToken = async () => {
@@ -760,6 +792,7 @@
                 logLoading,
                 refreshClients,
                 selectClient,
+                disconnectClient,
                 generateToken,
                 executeCommand,
                 listDirectory,

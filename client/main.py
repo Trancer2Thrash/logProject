@@ -129,6 +129,14 @@ class EDRClient:
 
             print(f"[{datetime.now()}] Received command: {msg_type}")
 
+            # 处理断开连接命令
+            if msg_type == "disconnect":
+                print(f"[{datetime.now()}] Server requested disconnect: {msg_data.get('reason', 'No reason')}")
+                self.running = False
+                if self.websocket:
+                    await self.websocket.close()
+                return
+
             # 分发到对应的处理器
             handler_map = {
                 "execute_cmd": self.handle_execute_cmd,
